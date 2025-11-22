@@ -34,6 +34,14 @@ namespace mesh {
             radio.setGroup(group);
             radio.setTransmitPower(7);
             radio.setTransmitSerialNumber(true);
+            // Start background discovery loop
+            control.inBackground(() => {
+                while (true) {
+                    this.discover();
+                    // Send Hello every 15-25 seconds to maintain routes
+                    basic.pause(15000 + Math.random() * 10000);
+                }
+            });
         }
         public discover() {
             // Broadcast a Hello packet
@@ -114,11 +122,11 @@ namespace mesh {
             } else if (pType === PayloadType.Number) {
                 payloadLen = 4;
             }
-            const buf2 = control.createBuffer(15 + payloadLen);
-            buf2.setNumber(NumberFormat.Int32LE, 0, target);
-            buf2.setNumber(NumberFormat.Int32LE, 4, mySerial);
-            buf2.setNumber(NumberFormat.Int32LE, 8, nextHop); // 0 = Broadcast/Any
-            buf2.setNumber(NumberFormat.UInt16LE, 12, this.messageId);
+            const buf = control.createBuffer(15 + payloadLen);
+            buf.setNumber(NumberFormat.Int32LE, 0, target);
+            buf.setNumber(NumberFormat.Int32LE, 4, mySerial); // Origin ID
+            buf.setNumber(NumberFormat.Int32LE, 8, nextHop); // Next Hop
+            buf.setNumber(NumberFormat.UInt16LE, 12, this.messageId);
             
             let flags = (MAX_TTL & 0x07);
             // Type is 2 bits now (0-3)
@@ -128,14 +136,15 @@ namespace mesh {
             // PayloadType: 0=String, 1=Number, 2=None. Bits 5-6.
             flags |= ((pType & 0x03) << 5);
             
-            buf2.setNumber(NumberFormat.UInt8LE, 14, flags);
+            buf.setNumber(NumberFormat.UInt8LE, 14, flags);
             
             if (pType === PayloadType.String && strBuf) {
-                buf2.write(15, strBuf);
+                buf.write(15, strBuf);
             } else if (pType === PayloadType.Number && num !== null) {
-                buf2.setNumber(NumberFormat.Int32LE, 15, num);
+                buf.setNumber(NumberFormat.Int32LE, 15, num);
             }
-            sendRawPacket(buf2);
+            // Send using C++ shim
+            sendRawPacket(buf);
         }
         private onRadioPacket(buf: Buffer) {
             if (buf.length < 15) return;
