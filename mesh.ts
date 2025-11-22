@@ -241,10 +241,6 @@ namespace mesh {
     export function init(group: number) {
         network.init(group);
     }
-    //% block="mesh discover nodes"
-    export function discoverNodes() {
-        network.discover();
-    }
     //% block="mesh get known nodes"
     export function getKnownNodes(): number[] {
         return network.getRoutes();
