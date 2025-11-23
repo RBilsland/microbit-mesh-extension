@@ -1,0 +1,11 @@
+{
+    "yotta": {
+        "config": {
+            "microbit-dal": {
+                "radio": {
+                    "max_packet_size": 254
+                }
+            }
+        }
+    }
+}
