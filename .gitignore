@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Build output
+*.hex
+*.bin
+
+# IDE
+.DS_Store
+*.swp
+*.swo

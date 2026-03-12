@@ -1,0 +1,22 @@
+{
+    "name": "mesh",
+    "description": "Simple mesh network for micro:bit - relay messages between devices to extend range",
+    "version": "0.0.1",
+    "dependencies": {
+        "core": "*",
+        "radio": "*"
+    },
+    "files": [
+        "mesh.ts",
+        "mesh.cpp",
+        "shims.d.ts",
+        "README.md"
+    ],
+    "testFiles": [
+        "test.ts"
+    ],
+    "supportedTargets": [
+        "microbit"
+    ],
+    "testDependencies": {}
+}
