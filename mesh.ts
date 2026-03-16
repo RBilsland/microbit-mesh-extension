@@ -74,7 +74,6 @@ namespace mesh {
      */
     //% shim=mesh::parsePacket
     function parsePacketNative(raw: Buffer): number {
-        // Simulator fallback - store in module vars for getters
         if (!raw || raw.length < HEADER_LENGTH || raw[0] !== MESH_MAGIC) return 0;
         _parsedTtl = raw[1];
         _parsedMsgId = raw.getNumber(NumberFormat.UInt16LE, 2);
@@ -92,17 +91,53 @@ namespace mesh {
     //% shim=mesh::getParsedPayload
     function getParsedPayloadNative(): Buffer { return _parsedPayload; }
 
+    /**
+     * Process received packet - full mesh logic in C++ on device
+     */
+    //% shim=mesh::processReceived
+    function processReceivedNative(raw: Buffer, myId: number): number {
+        // Simulator fallback
+        if (!raw || raw.length < HEADER_LENGTH || raw[0] !== MESH_MAGIC) return 0;
+        _parsedTtl = raw[1];
+        _parsedMsgId = raw.getNumber(NumberFormat.UInt16LE, 2);
+        _parsedSrcId = raw.getNumber(NumberFormat.UInt16LE, 4);
+        _parsedPayload = raw.slice(HEADER_LENGTH);
+        if (_parsedSrcId === (myId & 0xFFFF)) return 0;
+        const key = makeSeenKey(_parsedMsgId, _parsedSrcId);
+        if (wasSeen(key)) return 0;
+        markSeen(key);
+        return 1;
+    }
+
+    //% shim=mesh::shouldRelay
+    function shouldRelayNative(): boolean {
+        return relayEnabled && _parsedTtl > 0;
+    }
+
+    //% shim=mesh::getRelayPacket
+    function getRelayPacketNative(): Buffer {
+        if (!relayEnabled || _parsedTtl <= 0) return null;
+        return buildPacketNative(_parsedTtl - 1, _parsedMsgId, _parsedSrcId, _parsedPayload);
+    }
+
+    //% shim=mesh::setRelayEnabled
+    function setRelayEnabledNative(enabled: boolean): void {
+        relayEnabled = enabled;
+    }
+
     function parseMeshPacket(buf: Buffer): { ttl: number, msgId: number, srcId: number, payload: string } {
         if (parsePacketNative(buf) !== 1) return null;
-        const ttl = getParsedTtlNative();
-        const msgId = getParsedMsgIdNative();
-        const srcId = getParsedSrcIdNative();
         const payloadBuf = getParsedPayloadNative();
         let payload = "";
         if (payloadBuf) {
             try { payload = payloadBuf.toString(); } catch (e) { }
         }
-        return { ttl, msgId, srcId, payload };
+        return {
+            ttl: getParsedTtlNative(),
+            msgId: getParsedMsgIdNative(),
+            srcId: getParsedSrcIdNative(),
+            payload
+        };
     }
 
     function buildMeshPacket(ttl: number, msgId: number, srcId: number, payload: string): Buffer {
@@ -123,24 +158,23 @@ namespace mesh {
     }
 
     function handleReceivedBuffer(raw: Buffer) {
-        const pkt = parseMeshPacket(raw);
-        if (!pkt) return;
-
+        setRelayEnabledNative(relayEnabled);
         const myId = control.deviceSerialNumber() & 0xFFFF;
-        const key = makeSeenKey(pkt.msgId, pkt.srcId);
+        if (processReceivedNative(raw, myId) !== 1) return;
 
-        if (pkt.srcId === myId) return;
-        if (wasSeen(key)) return;
-        markSeen(key);
-
-        if (relayEnabled && pkt.ttl > 0) {
-            const fwd = buildMeshPacket(pkt.ttl - 1, pkt.msgId, pkt.srcId, pkt.payload);
-            radio.sendBuffer(fwd);
+        if (shouldRelayNative()) {
+            const relayPkt = getRelayPacketNative();
+            if (relayPkt) radio.sendBuffer(relayPkt);
         }
 
+        const payloadBuf = getParsedPayloadNative();
+        let payload = "";
+        if (payloadBuf) {
+            try { payload = payloadBuf.toString(); } catch (e) { }
+        }
         const signal = radio.receivedPacket(2);
         if (onReceivedHandler) {
-            onReceivedHandler(pkt.payload, signal);
+            onReceivedHandler(payload, signal);
         }
     }
 
@@ -200,6 +234,7 @@ namespace mesh {
     //% blockId=mesh_set_relay group="Config" weight=38
     export function setRelay(enabled: boolean) {
         relayEnabled = enabled;
+        setRelayEnabledNative(enabled);
     }
 
     /**
